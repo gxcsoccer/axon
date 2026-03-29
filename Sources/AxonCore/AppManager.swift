@@ -64,6 +64,21 @@ public final class AppManager: Sendable {
         findRunningApp(bundleId: bundleId).map { appInfoFrom($0) }
     }
 
+    /// Get info about the currently active (frontmost) application and its focused window.
+    public func getActiveWindow(axEngine: AXEngine) -> WindowInfo? {
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let bundleId = frontApp.bundleIdentifier else { return nil }
+        let windowInfo = axEngine.getFocusedWindowInfo(pid: frontApp.processIdentifier)
+        return WindowInfo(
+            appName: frontApp.localizedName ?? "Unknown",
+            bundleId: bundleId,
+            windowTitle: windowInfo.title,
+            pid: frontApp.processIdentifier,
+            position: windowInfo.position,
+            size: windowInfo.size
+        )
+    }
+
     // MARK: - Internal
 
     private func findRunningApp(bundleId: String) -> NSRunningApplication? {

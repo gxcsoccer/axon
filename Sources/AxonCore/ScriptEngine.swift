@@ -85,7 +85,7 @@ public final class ScriptEngine: Sendable {
 
     // MARK: - Built-in Recipes
 
-    nonisolated(unsafe) private static let recipes: [String: String] = [
+    private static let recipes: [String: String] = [
         "open_url": """
             tell application "Safari"
                 open location "{{url}}"

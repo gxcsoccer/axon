@@ -149,3 +149,35 @@ import Testing
     let result = await controller.execute(.listApps)
     #expect(result.success == true)
 }
+
+// MARK: - Read-Only Mode with New Actions
+
+@Test func readOnlyModeBlocksNewMutations() async {
+    let config = SecurityConfig(readOnlyMode: true)
+    let controller = AxonController(config: config)
+
+    let mutations: [(ComputerAction, String)] = [
+        (.drag(fromX: 0, fromY: 0, toX: 1, toY: 1), "drag"),
+        (.clipboardWrite(text: "x"), "clipboard_write"),
+        (.moveWindow(bundleId: "x", x: 0, y: 0), "move_window"),
+        (.resizeWindow(bundleId: "x", width: 100, height: 100), "resize_window"),
+    ]
+    for (action, name) in mutations {
+        let result = await controller.execute(action)
+        #expect(result.success == false, "Expected \(name) to be blocked in read-only mode")
+        #expect(result.error?.contains("Read-only mode") == true)
+    }
+}
+
+@Test func readOnlyModeAllowsNewReads() async {
+    let config = SecurityConfig(readOnlyMode: true)
+    let controller = AxonController(config: config)
+
+    // getCursorPosition should be allowed (read-only)
+    let cursorResult = await controller.execute(.getCursorPosition)
+    #expect(cursorResult.success == true)
+
+    // clipboardRead should be allowed (read-only)
+    let clipResult = await controller.execute(.clipboardRead)
+    #expect(clipResult.success == true)
+}

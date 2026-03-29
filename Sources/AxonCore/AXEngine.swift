@@ -166,13 +166,56 @@ public final class AXEngine: Sendable {
         case .prefix:
             return string.lowercased().hasPrefix(pattern.lowercased())
         case .regex:
-            return (try? string.range(of: pattern, options: .regularExpression)) != nil
+            return string.range(of: pattern, options: .regularExpression) != nil
         }
     }
 
     /// Perform a named action on an AX element (e.g., "AXPress", "AXShowMenu").
     public func performAction(element: AXUIElement, action: String) -> Bool {
         AXUIElementPerformAction(element, action as CFString) == .success
+    }
+
+    // MARK: - Window Management
+
+    /// Move the focused window of an app to a new position.
+    public func moveWindow(bundleId: String, x: Double, y: Double) -> Bool {
+        guard let window = getFocusedWindow(bundleId: bundleId) else { return false }
+        var point = CGPoint(x: x, y: y)
+        guard let value = AXValueCreate(.cgPoint, &point) else { return false }
+        return AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value) == .success
+    }
+
+    /// Resize the focused window of an app.
+    public func resizeWindow(bundleId: String, width: Double, height: Double) -> Bool {
+        guard let window = getFocusedWindow(bundleId: bundleId) else { return false }
+        var size = CGSize(width: width, height: height)
+        guard let value = AXValueCreate(.cgSize, &size) else { return false }
+        return AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value) == .success
+    }
+
+    /// Get info about the focused window of an app (title, position, size).
+    public func getFocusedWindowInfo(pid: pid_t) -> (title: String?, position: CGPointCodable?, size: CGSizeCodable?) {
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowRef) == .success else {
+            return (nil, nil, nil)
+        }
+        let window = windowRef! as! AXUIElement // safe: AXUIElementCopyAttributeValue guarantees valid ref on .success
+        let title = getStringAttribute(window, kAXTitleAttribute)
+        let position = getPosition(of: window)
+        let size = getSize(of: window)
+        return (title, position, size)
+    }
+
+    private func getFocusedWindow(bundleId: String) -> AXUIElement? {
+        guard let pid = pidForBundleId(bundleId) else { return nil }
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowRef) == .success else {
+            return nil
+        }
+        let element: AXUIElement = windowRef as! AXUIElement
+        return element
     }
 
     // MARK: - AX Attribute Helpers

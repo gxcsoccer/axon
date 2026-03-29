@@ -107,11 +107,13 @@ func buildServer(controller: AxonController, hostname: String, port: Int, authTo
         return try jsonResponse(result)
     }
 
-    // POST /screenshot — capture screen or window
+    // POST /screenshot — capture screen, window, or region
     router.post("/screenshot") { request, context in
         let body = try? await decodeBody(request, as: ScreenshotRequest.self)
         let result: ActionResult
-        if let bundleId = body?.bundleId {
+        if let region = body?.region {
+            result = await controller.execute(.regionScreenshot(x: region.x, y: region.y, width: region.width, height: region.height, displayId: body?.displayId))
+        } else if let bundleId = body?.bundleId {
             result = await controller.execute(.windowScreenshot(bundleId: bundleId, title: body?.windowTitle))
         } else {
             result = await controller.execute(.screenshot(displayId: body?.displayId))
@@ -148,6 +150,65 @@ func buildServer(controller: AxonController, hostname: String, port: Int, authTo
         } else {
             result = await controller.execute(.runAppleScript(script: body.script))
         }
+        return try jsonResponse(result)
+    }
+
+    // POST /drag — drag from one point to another
+    router.post("/drag") { request, context in
+        let body = try await decodeBody(request, as: DragRequest.self)
+        let result = await controller.execute(.drag(fromX: body.fromX, fromY: body.fromY, toX: body.toX, toY: body.toY))
+        return try jsonResponse(result)
+    }
+
+    // GET /cursor-position — get current cursor position
+    router.get("/cursor-position") { _, _ in
+        let result = await controller.execute(.getCursorPosition)
+        return try jsonResponse(result)
+    }
+
+    // GET /screen-info — get screen information
+    router.get("/screen-info") { _, _ in
+        let result = await controller.execute(.getScreenInfo)
+        return try jsonResponse(result)
+    }
+
+    // POST /region-screenshot — capture a region of the screen
+    router.post("/region-screenshot") { request, context in
+        let body = try await decodeBody(request, as: RegionScreenshotRequest.self)
+        let result = await controller.execute(.regionScreenshot(x: body.x, y: body.y, width: body.width, height: body.height, displayId: body.displayId))
+        return try jsonResponse(result)
+    }
+
+    // GET /clipboard — read clipboard contents
+    router.get("/clipboard") { _, _ in
+        let result = await controller.execute(.clipboardRead)
+        return try jsonResponse(result)
+    }
+
+    // POST /clipboard — set clipboard contents
+    router.post("/clipboard") { request, context in
+        let body = try await decodeBody(request, as: ClipboardRequest.self)
+        let result = await controller.execute(.clipboardWrite(text: body.text))
+        return try jsonResponse(result)
+    }
+
+    // GET /active-window — get active window info
+    router.get("/active-window") { _, _ in
+        let result = await controller.execute(.getActiveWindow)
+        return try jsonResponse(result)
+    }
+
+    // POST /move-window — move a window
+    router.post("/move-window") { request, context in
+        let body = try await decodeBody(request, as: MoveWindowRequest.self)
+        let result = await controller.execute(.moveWindow(bundleId: body.bundleId, x: body.x, y: body.y))
+        return try jsonResponse(result)
+    }
+
+    // POST /resize-window — resize a window
+    router.post("/resize-window") { request, context in
+        let body = try await decodeBody(request, as: ResizeWindowRequest.self)
+        let result = await controller.execute(.resizeWindow(bundleId: body.bundleId, width: body.width, height: body.height))
         return try jsonResponse(result)
     }
 
@@ -209,9 +270,20 @@ struct WaitRequest: Codable { var bundleId: String; var query: ElementQuery; var
 struct ClickRequest: Codable { var bundleId: String?; var query: ElementQuery?; var x: Double?; var y: Double? }
 struct TypeRequest: Codable { var bundleId: String?; var query: ElementQuery?; var text: String }
 struct KeyRequest: Codable { var key: String; var modifiers: [String]? }
-struct ScreenshotRequest: Codable { var displayId: Int?; var bundleId: String?; var windowTitle: String? }
+struct ScreenshotRequest: Codable {
+    var displayId: Int?
+    var bundleId: String?
+    var windowTitle: String?
+    var region: RegionRect?
+}
+struct RegionRect: Codable { var x: Int; var y: Int; var width: Int; var height: Int }
 struct ScriptRequest: Codable { var script: String; var language: String? }
 struct PerformActionRequest: Codable { var bundleId: String; var query: ElementQuery; var action: String }
+struct DragRequest: Codable { var fromX: Double; var fromY: Double; var toX: Double; var toY: Double }
+struct RegionScreenshotRequest: Codable { var x: Int; var y: Int; var width: Int; var height: Int; var displayId: Int? }
+struct ClipboardRequest: Codable { var text: String }
+struct MoveWindowRequest: Codable { var bundleId: String; var x: Double; var y: Double }
+struct ResizeWindowRequest: Codable { var bundleId: String; var width: Double; var height: Double }
 
 // MARK: - Helpers
 

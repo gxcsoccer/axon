@@ -153,6 +153,16 @@ public enum ComputerAction: Codable, Sendable {
     case windowScreenshot(bundleId: String, title: String?)
     case getElementText(bundleId: String, query: ElementQuery)
     case performAction(bundleId: String, query: ElementQuery, action: String)
+    // New capabilities
+    case drag(fromX: Double, fromY: Double, toX: Double, toY: Double)
+    case getCursorPosition
+    case getScreenInfo
+    case regionScreenshot(x: Int, y: Int, width: Int, height: Int, displayId: Int?)
+    case clipboardRead
+    case clipboardWrite(text: String)
+    case getActiveWindow
+    case moveWindow(bundleId: String, x: Double, y: Double)
+    case resizeWindow(bundleId: String, width: Double, height: Double)
 }
 
 public enum ScrollDirection: String, Codable, Sendable {
@@ -189,6 +199,57 @@ public enum ActionData: Codable, Sendable {
     case scriptOutput(String)
     case text(String)
     case none
+    // New data types
+    case cursorPosition(x: Double, y: Double)
+    case screenInfo(ScreenInfo)
+    case windowInfo(WindowInfo)
+}
+
+// MARK: - Screen Info
+
+public struct ScreenInfo: Codable, Sendable {
+    public var displayCount: Int
+    public var displays: [DisplayInfo]
+
+    public init(displayCount: Int, displays: [DisplayInfo]) {
+        self.displayCount = displayCount
+        self.displays = displays
+    }
+}
+
+public struct DisplayInfo: Codable, Sendable {
+    public var index: Int
+    public var width: Int
+    public var height: Int
+    public var isMain: Bool
+
+    public init(index: Int, width: Int, height: Int, isMain: Bool) {
+        self.index = index
+        self.width = width
+        self.height = height
+        self.isMain = isMain
+    }
+}
+
+// MARK: - Window Info
+
+public struct WindowInfo: Codable, Sendable {
+    public var appName: String
+    public var bundleId: String
+    public var windowTitle: String?
+    public var pid: Int32
+    public var position: CGPointCodable?
+    public var size: CGSizeCodable?
+
+    public init(appName: String, bundleId: String, windowTitle: String? = nil, pid: Int32,
+                position: CGPointCodable? = nil, size: CGSizeCodable? = nil) {
+        self.appName = appName
+        self.bundleId = bundleId
+        self.windowTitle = windowTitle
+        self.pid = pid
+        self.position = position
+        self.size = size
+    }
 }
 
 // MARK: - Security Config

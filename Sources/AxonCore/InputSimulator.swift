@@ -117,6 +117,87 @@ public final class InputSimulator: Sendable {
         up?.post(tap: .cghidEventTap)
     }
 
+    // MARK: - Drag
+
+    /// Drag from one point to another with smooth interpolation.
+    public func drag(from start: CGPoint, to end: CGPoint, duration: Double = 0.5) {
+        moveMouse(to: start)
+        usleep(50_000)
+        mouseDown(at: start)
+        usleep(50_000)
+
+        let steps = max(Int(duration * 60), 10)
+        let stepDelay = UInt32(duration / Double(steps) * 1_000_000)
+        for i in 1...steps {
+            let t = Double(i) / Double(steps)
+            let point = CGPoint(x: start.x + (end.x - start.x) * t,
+                                y: start.y + (end.y - start.y) * t)
+            let event = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged,
+                                mouseCursorPosition: point, mouseButton: .left)
+            event?.post(tap: .cghidEventTap)
+            usleep(stepDelay)
+        }
+
+        mouseUp(at: end)
+    }
+
+    // MARK: - Cursor Position
+
+    /// Get current cursor position in logical screen coordinates.
+    public func getCursorPosition() -> CGPoint {
+        guard let event = CGEvent(source: nil) else { return .zero }
+        return event.location
+    }
+
+    // MARK: - Clipboard
+
+    /// Read text from system clipboard.
+    public func getClipboardText() -> String? {
+        NSPasteboard.general.string(forType: .string)
+    }
+
+    /// Write text to system clipboard.
+    public func setClipboardText(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    // MARK: - Text Paste (CJK-safe)
+
+    /// Paste text via the system clipboard + Cmd+V.
+    /// This is the reliable path for non-ASCII text (Chinese, Japanese, Korean, etc.)
+    /// because CGEvent unicode input bypasses IME and causes garbled text.
+    ///
+    /// Saves and restores the previous clipboard contents.
+    public func pasteText(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        let oldContents = pasteboard.string(forType: .string)
+
+        // Guarantee clipboard restoration even if interrupted
+        defer {
+            usleep(200_000) // 200ms for app to process paste
+            pasteboard.clearContents()
+            if let old = oldContents {
+                pasteboard.setString(old, forType: .string)
+            }
+        }
+
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        usleep(50_000) // 50ms for pasteboard to settle
+
+        // Simulate Cmd+V
+        let keyV: CGKeyCode = 9
+        let down = CGEvent(keyboardEventSource: nil, virtualKey: keyV, keyDown: true)
+        let up = CGEvent(keyboardEventSource: nil, virtualKey: keyV, keyDown: false)
+        down?.flags = .maskCommand
+        up?.flags = .maskCommand
+        down?.post(tap: .cghidEventTap)
+        usleep(30_000)
+        up?.post(tap: .cghidEventTap)
+    }
+
     // MARK: - Helpers
 
     private func post(mouseEvent type: CGEventType, at point: CGPoint, button: CGMouseButton) {
@@ -134,7 +215,7 @@ public final class InputSimulator: Sendable {
 
     // MARK: - Key Code Maps
 
-    nonisolated(unsafe) static let keyCodeMap: [String: CGKeyCode] = [
+    static let keyCodeMap: [String: CGKeyCode] = [
         "return": 36, "enter": 36, "tab": 48, "space": 49,
         "delete": 51, "backspace": 51, "escape": 53, "esc": 53,
         "command": 55, "shift": 56, "capslock": 57, "option": 58, "alt": 58,
@@ -153,7 +234,7 @@ public final class InputSimulator: Sendable {
         ";": 41, "'": 39, ",": 43, ".": 47, "/": 44, "`": 50,
     ]
 
-    nonisolated(unsafe) static let modifierMap: [String: CGEventFlags] = [
+    static let modifierMap: [String: CGEventFlags] = [
         "command": .maskCommand, "cmd": .maskCommand,
         "shift": .maskShift,
         "option": .maskAlternate, "alt": .maskAlternate,

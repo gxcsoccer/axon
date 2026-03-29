@@ -57,7 +57,7 @@ public actor AxonController {
 
         case .activateApp(let bundleId):
             try appManager.activateApp(bundleId: bundleId)
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .listApps:
             let apps = appManager.listRunningApps()
@@ -97,7 +97,7 @@ public actor AxonController {
                     throw AxonError.actionFailed("Could not click element")
                 }
             }
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .typeIntoElement(let bundleId, let query, let text):
             guard let element = axEngine.findElement(bundleId: bundleId, query: query) else {
@@ -115,58 +115,46 @@ public actor AxonController {
                 if isASCII {
                     input.typeText(text)
                 } else {
-                    let escaped = text.replacingOccurrences(of: "\\", with: "\\\\")
-                        .replacingOccurrences(of: "\"", with: "\\\"")
-                    _ = try await scriptEngine.runAppleScript("""
-                        set the clipboard to "\(escaped)"
-                        delay 0.1
-                        tell application "System Events" to keystroke "v" using command down
-                        """)
+                    input.pasteText(text)
                 }
             }
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .clickAt(let x, let y):
             input.click(at: CGPoint(x: x, y: y))
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .doubleClickAt(let x, let y):
             input.doubleClick(at: CGPoint(x: x, y: y))
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .rightClickAt(let x, let y):
             input.rightClick(at: CGPoint(x: x, y: y))
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .moveMouse(let x, let y):
             input.moveMouse(to: CGPoint(x: x, y: y))
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .scroll(let x, let y, let direction, let amount):
             input.scroll(at: CGPoint(x: x, y: y), direction: direction, amount: amount)
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .typeText(let text):
             let isASCII = text.allSatisfy { $0.isASCII }
             if isASCII {
                 input.typeText(text)
             } else {
-                // Non-ASCII (Chinese, etc.): use AppleScript to set clipboard and paste.
-                // This avoids input method interference that garbles CGEvent unicode input.
-                let escaped = text.replacingOccurrences(of: "\\", with: "\\\\")
-                    .replacingOccurrences(of: "\"", with: "\\\"")
-                let script = """
-                    set the clipboard to "\(escaped)"
-                    delay 0.1
-                    tell application "System Events" to keystroke "v" using command down
-                    """
-                _ = try await scriptEngine.runAppleScript(script)
+                // Non-ASCII (Chinese, etc.): use NSPasteboard + Cmd+V to paste.
+                // This avoids input method interference that garbles CGEvent unicode input,
+                // and avoids AppleScript string encoding issues with CJK characters.
+                input.pasteText(text)
             }
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .pressKey(let key, let modifiers):
             input.pressKey(key, modifiers: modifiers ?? [])
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .screenshot(let displayId):
             let result: (base64: String, width: Int, height: Int)
@@ -213,7 +201,7 @@ public actor AxonController {
 
         case .quitApp(let bundleId):
             try appManager.quitApp(bundleId: bundleId)
-            return .ok(.none)
+            return .ok(ActionData.none)
 
         case .windowScreenshot(let bundleId, let title):
             let result = try await screenCapture.captureWindow(bundleId: bundleId, title: title)
@@ -241,7 +229,52 @@ public actor AxonController {
             guard axEngine.performAction(element: element, action: actionName) else {
                 throw AxonError.actionFailed("AX action '\(actionName)' failed")
             }
-            return .ok(.none)
+            return .ok(ActionData.none)
+
+        // New capabilities
+
+        case .drag(let fromX, let fromY, let toX, let toY):
+            input.drag(from: CGPoint(x: fromX, y: fromY), to: CGPoint(x: toX, y: toY))
+            return .ok(ActionData.none)
+
+        case .getCursorPosition:
+            let pos = input.getCursorPosition()
+            return .ok(.cursorPosition(x: pos.x, y: pos.y))
+
+        case .getScreenInfo:
+            let info = try await screenCapture.getScreenInfo()
+            return .ok(.screenInfo(info))
+
+        case .regionScreenshot(let x, let y, let width, let height, let displayId):
+            let result = try await screenCapture.captureRegion(
+                x: x, y: y, width: width, height: height, displayIndex: displayId ?? 0)
+            return .ok(.screenshot(base64: result.base64, width: result.width, height: result.height))
+
+        case .clipboardRead:
+            let text = input.getClipboardText() ?? ""
+            return .ok(.text(text))
+
+        case .clipboardWrite(let text):
+            input.setClipboardText(text)
+            return .ok(ActionData.none)
+
+        case .getActiveWindow:
+            guard let info = appManager.getActiveWindow(axEngine: axEngine) else {
+                return .fail("No active window found")
+            }
+            return .ok(.windowInfo(info))
+
+        case .moveWindow(let bundleId, let x, let y):
+            guard axEngine.moveWindow(bundleId: bundleId, x: x, y: y) else {
+                throw AxonError.actionFailed("Could not move window")
+            }
+            return .ok(ActionData.none)
+
+        case .resizeWindow(let bundleId, let width, let height):
+            guard axEngine.resizeWindow(bundleId: bundleId, width: width, height: height) else {
+                throw AxonError.actionFailed("Could not resize window")
+            }
+            return .ok(ActionData.none)
         }
     }
 }
@@ -273,6 +306,15 @@ extension ComputerAction {
         case .windowScreenshot: "window_screenshot"
         case .getElementText: "get_element_text"
         case .performAction: "perform_action"
+        case .drag: "drag"
+        case .getCursorPosition: "get_cursor_position"
+        case .getScreenInfo: "get_screen_info"
+        case .regionScreenshot: "region_screenshot"
+        case .clipboardRead: "clipboard_read"
+        case .clipboardWrite: "clipboard_write"
+        case .getActiveWindow: "get_active_window"
+        case .moveWindow: "move_window"
+        case .resizeWindow: "resize_window"
         }
     }
 
@@ -286,6 +328,8 @@ extension ComputerAction {
         case .windowScreenshot(let id, _): id
         case .getElementText(let id, _): id
         case .performAction(let id, _, _): id
+        case .moveWindow(let id, _, _): id
+        case .resizeWindow(let id, _, _): id
         default: nil
         }
     }
@@ -294,7 +338,8 @@ extension ComputerAction {
     public var isReadOnly: Bool {
         switch self {
         case .listApps, .getUITree, .findElement, .screenshot, .windowScreenshot,
-             .waitForElement, .getElementText:
+             .waitForElement, .getElementText,
+             .getCursorPosition, .getScreenInfo, .regionScreenshot, .clipboardRead, .getActiveWindow:
             return true
         default:
             return false

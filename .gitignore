@@ -4,7 +4,9 @@
 # Swift
 .build/
 .swiftpm/
-Package.resolved
+
+# Generated artifacts
+axon-screenshot-*.jpg
 
 # Node.js
 node_modules/
